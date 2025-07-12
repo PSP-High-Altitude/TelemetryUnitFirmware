@@ -1,0 +1,6 @@
+#ifndef TELEMETRY_RECEIVER_H
+#define TELEMETRY_RECEIVER_H
+
+// Example header
+
+#endif // TELEMETRY_RECEIVER_H
