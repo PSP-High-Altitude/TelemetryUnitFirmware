@@ -34,48 +34,34 @@
 
 #include "sdkconfig.h"
 
-#define GATTS_TAG "GATTS_DEMO"
-
-// Declare the static function
-// Note `ble` means `Bluetooth Low Energy`
-// Note `gap` means `Generic Access Profile`
-// Note `_t` means `_type` 
-// Note `if` means `interface`
-// Note `cb` means `callback`
-static void gatts_profile_event_handler(
-    esp_gatts_cb_event_t event, 
-    esp_gatt_if_t gatts_if, 
-    esp_ble_gatts_cb_param_t *param
-);
+#define GATTS_TAG "TELEMETRY_UNIT_GATTS"
 
 #define GATTS_SERVICE_UUID_TEST 0x00FF
 #define GATTS_CHAR_UUID_TEST 0xFF01
 #define GATTS_DESCR_UUID_TEST 0x3333
 #define GATTS_NUM_HANDLE_TEST 4
 
-//Define UUIDs we are using
+// Define UUIDs we are using
 
-//Battery Service
+// Battery Service
 #define GATTS_BATTERY_SERVICE_UUID 0x180F
 #define GATTS_BATTERY_LEVEL_CHAR_UUID 0x2A19
 #define GATTS_BATTERY_STATUS_CHAR_UUID 0x2BED
 #define GATTS_NUM_HANDLE_BAT 5
 
-//Custom PSP Service
+// Custom PSP Service
 static esp_bt_uuid_t gatts_psp_service_uuid = {
     .len = ESP_UUID_LEN_128,
     .uuid.uuid128 = {0x2c, 0xe3, 0x1d, 0x4e, 0xb7, 0x8d, 0x97, 0x84,
-                     0x6e, 0x44, 0x6b, 0x8f, 0xca, 0x0d, 0x9a, 0x14}
-};
+                     0x6e, 0x44, 0x6b, 0x8f, 0xca, 0x0d, 0x9a, 0x14}};
 
 static esp_bt_uuid_t gatts_psp_char_uuid = {
     .len = ESP_UUID_LEN_128,
     .uuid.uuid128 = {0xe7, 0xb1, 0xd3, 0xc0, 0xfd, 0x2e, 0xc4, 0x93,
-                     0xda, 0x44, 0x12, 0xda, 0xb7, 0xc8, 0x1d, 0xa6}
-};
+                     0xda, 0x44, 0x12, 0xda, 0xb7, 0xc8, 0x1d, 0xa6}};
 #define GATTS_NUM_HANDLE_PSP 3
 
-static char test_device_name[ESP_BLE_ADV_NAME_LEN_MAX] = "ESP_GATTS_DEMO";
+static char device_name[ESP_BLE_ADV_NAME_LEN_MAX] = "PSP Telemetry Unit";
 
 #define TEST_MANUFACTURER_DATA_LEN 17
 #define GATTS_DEMO_CHAR_VAL_LEN_MAX 0x40
@@ -91,14 +77,6 @@ static uint16_t descr_value = 0x0;
  */
 static uint16_t local_mtu = 23;
 static uint8_t char_value_read[CONFIG_EXAMPLE_CHAR_READ_DATA_LEN] = {0xDE, 0xED, 0xBE, 0xEF};
-
-static esp_gatt_char_prop_t a_property = 0;
-static esp_attr_value_t gatts_demo_char1_val =
-{
-    .attr_max_len = GATTS_DEMO_CHAR_VAL_LEN_MAX,
-    .attr_len = sizeof(char1_str),
-    .attr_value = char1_str,
-};
 
 static uint8_t adv_config_done = 0;
 #define adv_config_flag (1 << 0)
@@ -188,26 +166,55 @@ static esp_ble_adv_params_t adv_params = {
     .adv_filter_policy = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY,
 };
 
-struct gatts_profile_inst{
-    esp_gatts_cb_t gatts_cb;
-    uint16_t gatts_if;
-    uint16_t app_id;
-    uint16_t conn_id;
+// struct gatts_profile_inst
+// {
+//     esp_gatts_cb_t gatts_cb;
+//     uint16_t gatts_if;
+//     uint16_t app_id;
+//     uint16_t conn_id;
+//     uint16_t service_handle;
+//     esp_gatt_srvc_id_t service_id;
+//     uint16_t char_handle;
+//     esp_bt_uuid_t char_uuid;
+//     esp_gatt_perm_t perm;
+//     esp_gatt_char_prop_t property;
+//     uint16_t descr_handle;
+//     esp_bt_uuid_t descr_uuid;
+// };
+
+// /* One gatt-based profile one app_id and one gatts_if, this array will store the gatts_if returned by ESP_GATTS_REG_EVT */
+// static struct gatts_profile_inst gatts_profile = {
+//     .gatts_cb = gatts_profile_event_handler,
+//     .gatts_if = ESP_GATT_IF_NONE, /* Not get the gatt_if, so initial is ESP_GATT_IF_NONE */
+// }
+
+static uint16_t s_gatts_if;
+static uint16_t s_app_id;
+static uint16_t s_conn_id;
+static esp_gatt_perm_t s_perm;
+
+typedef struct
+{
     uint16_t service_handle;
     esp_gatt_srvc_id_t service_id;
-    uint16_t char_handle;
-    esp_bt_uuid_t char_uuid;
-    esp_gatt_perm_t perm;
-    esp_gatt_char_prop_t property;
-    uint16_t descr_handle;
-    esp_bt_uuid_t descr_uuid;
-};
+    uint16_t char_level_handle;
+    esp_bt_uuid_t char_level_uuid;
+    esp_gatt_char_prop_t char_level_property;
+    uint16_t char_status_handle;
+    esp_bt_uuid_t char_status_uuid;
+    esp_gatt_char_prop_t char_status_property;
+} gatts_battery_service_t;
 
-/* One gatt-based profile one app_id and one gatts_if, this array will store the gatts_if returned by ESP_GATTS_REG_EVT */
-static struct gatts_profile_inst gatts_profile = {
-    .gatts_cb = gatts_profile_event_handler,
-    .gatts_if = ESP_GATT_IF_NONE, /* Not get the gatt_if, so initial is ESP_GATT_IF_NONE */
-}
+static gatts_battery_service_t s_gatts_battery_service = {
+    .char_level_handle = 0,
+    .service_id = {
+        .is_primary = true,
+        .id = {
+            .inst_id = 0x00,
+            .uuid = {
+                .len = ESP_UUID_LEN_16,
+                .uuid.uuid16 = GATTS_BATTERY_SERVICE_UUID}}},
+};
 
 typedef struct
 {
@@ -216,7 +223,6 @@ typedef struct
 } prepare_type_env_t;
 
 static prepare_type_env_t a_prepare_write_env;
-
 
 void example_write_event_env(esp_gatt_if_t gatts_if, prepare_type_env_t *prepare_write_env, esp_ble_gatts_cb_param_t *param);
 void example_exec_write_event_env(prepare_type_env_t *prepare_write_env, esp_ble_gatts_cb_param_t *param);
@@ -302,36 +308,51 @@ void example_exec_write_event_env(prepare_type_env_t *prepare_write_env, esp_ble
 }
 
 // Event Handlers
-
-static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param)
+static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param)
 {
+    /* If event is register event, store the gatts_if for each profile */
+    if (event == ESP_GATTS_REG_EVT)
+    {
+        if (param->reg.status == ESP_GATT_OK)
+        {
+            s_gatts_if = gatts_if;
+        }
+        else
+        {
+            ESP_LOGI(GATTS_TAG, "Reg app failed, app_id %04x, status %d",
+                     param->reg.app_id,
+                     param->reg.status);
+            return;
+        }
+    }
+
     switch (event)
     {
     case ESP_GATTS_REG_EVT:
         ESP_LOGI(GATTS_TAG, "GATT server register, status %d, app_id %d, gatts_if %d", param->reg.status, param->reg.app_id, gatts_if);
 
-        //Create PSP Service
+        // Create PSP Service
         gatts_profile.service_id.is_primary = true;
         gatts_profile.service_id.id.inst_id = 0x00;
         gatts_profile.service_id.id.uuid = gatts_psp_service_uuid;
         esp_err_t ret = esp_ble_gatts_create_service(gatts_if, &gatts_profile.service_id, GATTS_NUM_HANDLE_PSP);
-        if (ret) {
+        if (ret)
+        {
             ESP_LOGE(GATTS_TAG, "Create PSP service failed, error code = %x", ret);
         }
 
-        //Create Battery Service
-        gatts_profile.service_id.is_primary = true;
-        gatts_profile.service_id.id.inst_id = 0x01;
-        gatts_profile.service_id.id.uuid.len = ESP_UUID_LEN_16;
-        gatts_profile.service_id.id.uuid.uuid.uuid16 = GATTS_BATTERY_SERVICE_UUID;
+        // Create Battery Service
+        gatts_battery_service.service_id.is_primary = true;
+        gatts_battery_service.service_id.id.inst_id = 0x00;
+        gatts_battery_service.service_id.id.uuid.len = ESP_UUID_LEN_16;
+        gatts_battery_service.service_id.id.uuid.uuid.uuid16 = GATTS_BATTERY_SERVICE_UUID;
         esp_err_t ret = esp_ble_gatts_create_service(gatts_if, &gatts_profile.service_id, GATTS_NUM_HANDLE_BAT);
-        if (ret) {
+        if (ret)
+        {
             ESP_LOGE(GATTS_TAG, "Create battery service failed, error code = %x", ret);
         }
 
-        
-
-        esp_err_t set_dev_name_ret = esp_ble_gap_set_device_name(test_device_name);
+        esp_err_t set_dev_name_ret = esp_ble_gap_set_device_name(device_name);
         if (set_dev_name_ret)
         {
             ESP_LOGE(GATTS_TAG, "set device name failed, error code = %x", set_dev_name_ret);
@@ -477,20 +498,36 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
         break;
     case ESP_GATTS_CREATE_EVT:
         ESP_LOGI(GATTS_TAG, "Service create, status %d, service_handle %d", param->create.status, param->create.service_handle);
-        gatts_profile.service_handle = param->create.service_handle;
-        gatts_profile.char_uuid.len = ESP_UUID_LEN_16;
-        gatts_profile.char_uuid.uuid.uuid16 = GATTS_CHAR_UUID_TEST;
-
-        esp_ble_gatts_start_service(gatts_profile.service_handle);
-        a_property = ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_WRITE | ESP_GATT_CHAR_PROP_BIT_NOTIFY;
-        esp_err_t add_char_ret = esp_ble_gatts_add_char(gatts_profile.service_handle, &gatts_profile.char_uuid,
-                                                        ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE,
-                                                        a_property,
-                                                        &gatts_demo_char1_val, NULL);
-        if (add_char_ret)
+        if (param->create.service_id.id.uuid == GATTS_BATTERY_SERVICE_UUID)
         {
-            ESP_LOGE(GATTS_TAG, "add char failed, error code =%x", add_char_ret);
+            s_gatts_battery_service.service_handle = param->create.service_handle;
+
+            // Start Battery Service
+            esp_ble_gatts_start_service(s_gatts_battery_service.service_handle);
+
+            // Add Battery Level Characteristic
+            esp_err_t add_char_ret = esp_ble_gatts_add_char(s_gatts_battery_service.char_level_handle, s_gatts_battery_service.char_level_uuid,
+                                                            ESP_GATT_PERM_READ,
+                                                            ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY,
+                                                            &gatts_demo_char1_val, NULL);
+
+            if (add_char_ret)
+            {
+                ESP_LOGE(GATTS_TAG, "add char failed, error code =%x", add_char_ret);
+            }
+
+            // Add Battery Status Characteristic
+            esp_err_t add_char_ret = esp_ble_gatts_add_char(s_gatts_battery_service.char_status_handle, s_gatts_battery_service.char_status_uuid,
+                                                            ESP_GATT_PERM_READ,
+                                                            ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY,
+                                                            &gatts_demo_char1_val, NULL);
+
+            if (add_char_ret)
+            {
+                ESP_LOGE(GATTS_TAG, "add char failed, error code =%x", add_char_ret);
+            }
         }
+
         break;
     case ESP_GATTS_ADD_INCL_SRVC_EVT:
         break;
@@ -575,40 +612,6 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
     }
 }
 
-static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param)
-{
-    /* If event is register event, store the gatts_if for each profile */
-    if (event == ESP_GATTS_REG_EVT)
-    {
-        if (param->reg.status == ESP_GATT_OK)
-        {
-            gl_profile_tab[param->reg.app_id].gatts_if = gatts_if;
-        }
-        else
-        {
-            ESP_LOGI(GATTS_TAG, "Reg app failed, app_id %04x, status %d",
-                     param->reg.app_id,
-                     param->reg.status);
-            return;
-        }
-    }
-
-    /* If the gatts_if equal to profile A, call profile A cb handler,
-     * so here call each profile's cb */
-    do
-    {
-        int idx = 0;
-            if (gatts_if == ESP_GATT_IF_NONE || /* ESP_GATT_IF_NONE, not specify a certain gatt_if, need to call every profile cb function */
-                gatts_if == gl_profile_tab[idx].gatts_if)
-            {
-                if (gl_profile_tab[idx].gatts_cb)
-                {
-                    gl_profile_tab[idx].gatts_cb(event, gatts_if, param);
-                }
-            }
-    } while (0);
-}
-
 static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
 {
     switch (event)
@@ -679,7 +682,7 @@ void app_main(void)
     ESP_ERROR_CHECK(ret);
 
 #if CONFIG_EXAMPLE_CI_PIPELINE_ID
-    memcpy(test_device_name, esp_bluedroid_get_example_name(), ESP_BLE_ADV_NAME_LEN_MAX);
+    memcpy(device_name, esp_bluedroid_get_example_name(), ESP_BLE_ADV_NAME_LEN_MAX);
 #endif
 
     ESP_ERROR_CHECK(esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT));

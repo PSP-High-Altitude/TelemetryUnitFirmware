@@ -1,0 +1,10 @@
+{
+    "cmake.sourceDirectory": "C:/Users/griff/OneDrive/Documents/TelemetryUnitFirmware/project-name",
+    "idf.openOcdConfigs": [
+        "interface/ftdi/esp_ftdi.cfg",
+        "target/esp32s3.cfg"
+    ],
+    "idf.espIdfPathWin": "C:\\Users\\griff\\esp\\v5.5\\esp-idf",
+    "idf.toolsPathWin": "D:\\Programs\\Espressif",
+    "idf.pythonInstallPath": "D:\\Programs\\Espressif\\tools\\idf-python\\3.11.2\\python.exe"
+}
