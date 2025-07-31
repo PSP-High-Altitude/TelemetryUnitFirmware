@@ -519,7 +519,7 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
         break;
     case ESP_GATTS_CREATE_EVT:
         ESP_LOGI(GATTS_TAG, "Service create, status %d, service_handle %d", param->create.status, param->create.service_handle);
-        if (param->create.service_id.id.uuid == GATTS_BATTERY_SERVICE_UUID)
+        if (param->create.service_id.id.uuid.len == ESP_UUID_LEN_16 && param->create.service_id.id.uuid.uuid.uuid16 == GATTS_BATTERY_SERVICE_UUID)
         {
             s_gatts_battery_service.service_handle = param->create.service_handle;
 
@@ -550,7 +550,7 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
             {
                 ESP_LOGE(GATTS_TAG, "add battery status char failed, error code =%x", add_char_ret);
             }
-        } else if (param->create.service_id.id.uuid == gatts_psp_service_uuid) {
+        } else if (param->create.service_id.id.uuid.len == ESP_UUID_LEN_128 && param->create.service_id.id.uuid.uuid.uuid128 == gatts_psp_service_uuid.uuid.uuid128) {
             s_gatts_psp_service.service_handle = param->create.service_handle;
 
             //Start PSP Service
