@@ -214,7 +214,35 @@ static gatts_battery_service_t s_gatts_battery_service = {
             .uuid = {
                 .len = ESP_UUID_LEN_16,
                 .uuid.uuid16 = GATTS_BATTERY_SERVICE_UUID}}},
+    .char_level_uuid = {
+        .len = ESP_UUID_LEN_16,
+        .uuid.uuid16 = GATTS_BATTERY_LEVEL_CHAR_UUID,
+    },
+    .char_status_uuid = {
+        .len = ESP_UUID_LEN_16,
+        .uuid.uuid16 = GATTS_BATTERY_STATUS_CHAR_UUID,
+    },
 };
+
+typedef struct
+{
+    uint16_t service_handle;
+    esp_gatt_srvc_id_t service_id;
+    uint16_t char_psp_handle;
+    esp_bt_uuid_t char_psp_uuid;
+    esp_gatt_char_prop_t char_psp_property;
+} gatts_psp_service_t;
+
+static gatts_psp_service_t s_gatts_psp_service = {
+    .service_id = {
+        .is_primary = true,
+        .id = {
+            .inst_id = 0x00,
+            .uuid = gatts_psp_service_uuid,
+        }
+    },
+    .char_psp_uuid = gatts_psp_char_uuid,
+}
 
 typedef struct
 {
@@ -332,21 +360,14 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
         ESP_LOGI(GATTS_TAG, "GATT server register, status %d, app_id %d, gatts_if %d", param->reg.status, param->reg.app_id, gatts_if);
 
         // Create PSP Service
-        gatts_profile.service_id.is_primary = true;
-        gatts_profile.service_id.id.inst_id = 0x00;
-        gatts_profile.service_id.id.uuid = gatts_psp_service_uuid;
-        esp_err_t ret = esp_ble_gatts_create_service(gatts_if, &gatts_profile.service_id, GATTS_NUM_HANDLE_PSP);
+        esp_err_t ret = esp_ble_gatts_create_service(gatts_if, &s_gatts_psp_service.service_id, GATTS_NUM_HANDLE_PSP);
         if (ret)
         {
             ESP_LOGE(GATTS_TAG, "Create PSP service failed, error code = %x", ret);
         }
 
         // Create Battery Service
-        gatts_battery_service.service_id.is_primary = true;
-        gatts_battery_service.service_id.id.inst_id = 0x00;
-        gatts_battery_service.service_id.id.uuid.len = ESP_UUID_LEN_16;
-        gatts_battery_service.service_id.id.uuid.uuid.uuid16 = GATTS_BATTERY_SERVICE_UUID;
-        esp_err_t ret = esp_ble_gatts_create_service(gatts_if, &gatts_profile.service_id, GATTS_NUM_HANDLE_BAT);
+        esp_err_t ret = esp_ble_gatts_create_service(gatts_if, &s_gatts_battery_service.service_id, GATTS_NUM_HANDLE_BAT);
         if (ret)
         {
             ESP_LOGE(GATTS_TAG, "Create battery service failed, error code = %x", ret);
@@ -502,6 +523,9 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
         {
             s_gatts_battery_service.service_handle = param->create.service_handle;
 
+            // Here when we are adding characteristics there's something called the attribute value (I think we need to pass in a pointer to the characteristic value), 
+            // gatts_demo_char1_val is still from the demo code, are we just going to create one for our test messages?
+
             // Start Battery Service
             esp_ble_gatts_start_service(s_gatts_battery_service.service_handle);
 
@@ -513,7 +537,7 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
 
             if (add_char_ret)
             {
-                ESP_LOGE(GATTS_TAG, "add char failed, error code =%x", add_char_ret);
+                ESP_LOGE(GATTS_TAG, "add battery level char failed, error code =%x", add_char_ret);
             }
 
             // Add Battery Status Characteristic
@@ -524,7 +548,23 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
 
             if (add_char_ret)
             {
-                ESP_LOGE(GATTS_TAG, "add char failed, error code =%x", add_char_ret);
+                ESP_LOGE(GATTS_TAG, "add battery status char failed, error code =%x", add_char_ret);
+            }
+        } else if (param->create.service_id.id.uuid == gatts_psp_service_uuid) {
+            s_gatts_psp_service.service_handle = param->create.service_handle;
+
+            //Start PSP Service
+            esp_ble_gatts_start_service(s_gatts_psp_service.service_handle);
+
+            //Add PSP Characteristic
+            esp_err_t add_char_ret = esp_ble_gatts_add_char(s_gatts_psp_service.char_psp_handle, s_gatts_psp_service.char_psp_uuid,
+                                                            ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE,
+                                                            ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY,
+                                                            &gatts_demo_char1_val, NULL);
+
+            if (add_char_ret)
+            {
+                ESP_LOGE(GATTS_TAG, "add psp char failed, error code =%x", add_char_ret);
             }
         }
 
