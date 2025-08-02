@@ -36,10 +36,14 @@
 
 #define GATTS_TAG "TELEMETRY_UNIT_GATTS"
 
-#define GATTS_SERVICE_UUID_TEST 0x00FF
-#define GATTS_CHAR_UUID_TEST 0xFF01
-#define GATTS_DESCR_UUID_TEST 0x3333
-#define GATTS_NUM_HANDLE_TEST 4
+// We need a profile for the connection id, app id, other potential settings, etc.
+// This was abstracted away into profiles in the demo code, and I'm not sure what's actually in it...
+// and then there's a struct for each of the services to access their handles and properties
+// there's only really two methods, but both of the implement a lot of poorly documented functionality
+// the event handler has registration, read, write (single vs buffered), connect/disconnect, config
+// I think for event handler for the most part is just setting existing variables to our new structs
+// I think the GAP already seems to be implemented fully and doesn't need much changing
+// I think the main is also pretty much good out of the box
 
 // Define UUIDs we are using
 
@@ -63,8 +67,6 @@ static esp_bt_uuid_t gatts_psp_char_uuid = {
 
 static char device_name[ESP_BLE_ADV_NAME_LEN_MAX] = "PSP Telemetry Unit";
 
-#define TEST_MANUFACTURER_DATA_LEN 17
-#define GATTS_DEMO_CHAR_VAL_LEN_MAX 0x40
 #define PREPARE_BUF_MAX_SIZE 1024
 
 static uint8_t char1_str[] = {0x11, 0x22, 0x33};
@@ -120,10 +122,9 @@ static uint8_t adv_service_uuid128[32] = {
     0x00,
 };
 
-// The length of adv data must be less than 31 bytes
-// static uint8_t test_manufacturer[TEST_MANUFACTURER_DATA_LEN] =  {0x12, 0x23, 0x45, 0x56};
-// adv data
-static esp_ble_adv_data_t adv_data = {
+// The length of advertising data must be less than 31 bytes
+// Data that's advertised by the device
+static esp_ble_adv_data_t advertising_data = {
     .set_scan_rsp = false,
     .include_name = true,
     .include_txpower = false,
@@ -138,55 +139,21 @@ static esp_ble_adv_data_t adv_data = {
     .p_service_uuid = adv_service_uuid128,
     .flag = (ESP_BLE_ADV_FLAG_GEN_DISC | ESP_BLE_ADV_FLAG_BREDR_NOT_SPT),
 };
-// scan response data
+
+// Data sent in response to scan requests
+// I think it's wasteful to include data that was already sent in the advertising data
 static esp_ble_adv_data_t scan_rsp_data = {
-    .set_scan_rsp = true,
-    .include_name = true,
-    .include_txpower = true,
-    //.min_interval = 0x0006,
-    //.max_interval = 0x0010,
-    .appearance = 0x00,
-    .manufacturer_len = 0,       // TEST_MANUFACTURER_DATA_LEN,
-    .p_manufacturer_data = NULL, //&test_manufacturer[0],
-    .service_data_len = 0,
-    .p_service_data = NULL,
-    .service_uuid_len = sizeof(adv_service_uuid128),
-    .p_service_uuid = adv_service_uuid128,
-    .flag = (ESP_BLE_ADV_FLAG_GEN_DISC | ESP_BLE_ADV_FLAG_BREDR_NOT_SPT),
+    .set_scan_rsp = true,                                   // flag to indicate this is scan response data
+    .include_txpower = true,                                // include TX power level in scan response
+    // insert something useful to send when scanned for
 };
 
 static esp_ble_adv_params_t adv_params = {
-    .adv_int_min = 0x20,
-    .adv_int_max = 0x40,
-    .adv_type = ADV_TYPE_IND,
-    .own_addr_type = BLE_ADDR_TYPE_PUBLIC,
-    //.peer_addr            =
-    //.peer_addr_type       =
-    .channel_map = ADV_CHNL_ALL,
-    .adv_filter_policy = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY,
+    .adv_type = ADV_TYPE_IND,                               // poorly documented
+    .own_addr_type = BLE_ADDR_TYPE_PUBLIC,                  // public device address
+    .channel_map = ADV_CHNL_ALL,                            // advertising channels (among 37, 38, 39)
+    .adv_filter_policy = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY, // allow scan and connect requests from any device
 };
-
-// struct gatts_profile_inst
-// {
-//     esp_gatts_cb_t gatts_cb;
-//     uint16_t gatts_if;
-//     uint16_t app_id;
-//     uint16_t conn_id;
-//     uint16_t service_handle;
-//     esp_gatt_srvc_id_t service_id;
-//     uint16_t char_handle;
-//     esp_bt_uuid_t char_uuid;
-//     esp_gatt_perm_t perm;
-//     esp_gatt_char_prop_t property;
-//     uint16_t descr_handle;
-//     esp_bt_uuid_t descr_uuid;
-// };
-
-// /* One gatt-based profile one app_id and one gatts_if, this array will store the gatts_if returned by ESP_GATTS_REG_EVT */
-// static struct gatts_profile_inst gatts_profile = {
-//     .gatts_cb = gatts_profile_event_handler,
-//     .gatts_if = ESP_GATT_IF_NONE, /* Not get the gatt_if, so initial is ESP_GATT_IF_NONE */
-// }
 
 static uint16_t s_gatts_if;
 static uint16_t s_app_id;
@@ -242,7 +209,7 @@ static gatts_psp_service_t s_gatts_psp_service = {
         }
     },
     .char_psp_uuid = gatts_psp_char_uuid,
-}
+};
 
 typedef struct
 {
@@ -335,11 +302,14 @@ void example_exec_write_event_env(prepare_type_env_t *prepare_write_env, esp_ble
     prepare_write_env->prepare_len = 0;
 }
 
-// Event Handlers
+// Event Handler
 static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param)
 {
-    /* If event is register event, store the gatts_if for each profile */
-    if (event == ESP_GATTS_REG_EVT)
+    esp_err_t ret;
+
+    switch (event)
+    {
+    case ESP_GATTS_REG_EVT:
     {
         if (param->reg.status == ESP_GATT_OK)
         {
@@ -352,22 +322,18 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
                      param->reg.status);
             return;
         }
-    }
 
-    switch (event)
-    {
-    case ESP_GATTS_REG_EVT:
         ESP_LOGI(GATTS_TAG, "GATT server register, status %d, app_id %d, gatts_if %d", param->reg.status, param->reg.app_id, gatts_if);
 
-        // Create PSP Service
-        esp_err_t ret = esp_ble_gatts_create_service(gatts_if, &s_gatts_psp_service.service_id, GATTS_NUM_HANDLE_PSP);
+        // registers PSP Service
+        ret = esp_ble_gatts_create_service(gatts_if, &s_gatts_psp_service.service_id, GATTS_NUM_HANDLE_PSP);
         if (ret)
         {
             ESP_LOGE(GATTS_TAG, "Create PSP service failed, error code = %x", ret);
         }
 
-        // Create Battery Service
-        esp_err_t ret = esp_ble_gatts_create_service(gatts_if, &s_gatts_battery_service.service_id, GATTS_NUM_HANDLE_BAT);
+        // registers Battery Service
+        ret = esp_ble_gatts_create_service(gatts_if, &s_gatts_battery_service.service_id, GATTS_NUM_HANDLE_BAT);
         if (ret)
         {
             ESP_LOGE(GATTS_TAG, "Create battery service failed, error code = %x", ret);
@@ -380,14 +346,14 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
         }
 
         // config adv data
-        esp_err_t ret = esp_ble_gap_config_adv_data(&adv_data);
+        ret = esp_ble_gap_config_adv_data(&advertising_data);
         if (ret)
         {
             ESP_LOGE(GATTS_TAG, "config adv data failed, error code = %x", ret);
         }
         adv_config_done |= adv_config_flag;
 
-        // config scan response data
+        // config scan response data (same function as above but detects a flag inside the data)
         ret = esp_ble_gap_config_adv_data(&scan_rsp_data);
         if (ret)
         {
@@ -396,6 +362,7 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
         adv_config_done |= scan_rsp_config_flag;
 
         break;
+    }
     case ESP_GATTS_READ_EVT:
     {
         ESP_LOGI(GATTS_TAG,
@@ -404,8 +371,7 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
                  param->read.is_long, param->read.offset, param->read.need_rsp);
 
         // If no response is needed, exit early (stack handles it automatically)
-        if (!param->read.need_rsp)
-        {
+        if (!param->read.need_rsp) {
             return;
         }
 
@@ -413,18 +379,55 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
         memset(&rsp, 0, sizeof(esp_gatt_rsp_t));
         rsp.attr_value.handle = param->read.handle;
 
-        // Handle descriptor read request
-        if (param->read.handle == gatts_profile.descr_handle)
-        {
+        // I have no idea if any of these services work like this but I think they should go here
+        // If the objects don't match to the ones above I'm guessing they should be defined to be similar 
+
+        // Handle descriptor read request for Battery Service
+        if (param->read.handle == gatts_battery_service.descr_handle) {
             memcpy(rsp.attr_value.value, &descr_value, 2);
             rsp.attr_value.len = 2;
             esp_ble_gatts_send_response(gatts_if, param->read.conn_id, param->read.trans_id, ESP_GATT_OK, &rsp);
             return;
         }
 
-        // Handle characteristic read request
-        if (param->read.handle == gatts_profile.char_handle)
-        {
+        // Handle descriptor read request for PSP Service
+        if (param->read.handle == s_gatts_psp_service.char_psp_handle) {
+            memcpy(rsp.attr_value.value, &descr_value, 2);
+            rsp.attr_value.len = 2;
+            esp_ble_gatts_send_response(gatts_if, param->read.conn_id, param->read.trans_id, ESP_GATT_OK, &rsp);
+            return;
+        }
+
+        // Handle characteristic read request for battery service
+        if (param->read.handle == s_gatts_battery_service.char_handle) {
+            uint16_t offset = param->read.offset;
+
+            // Validate read offset
+            if (param->read.is_long && offset > CONFIG_EXAMPLE_CHAR_READ_DATA_LEN)
+            {
+                ESP_LOGW(GATTS_TAG, "Read offset (%d) out of range (0-%d)", offset, CONFIG_EXAMPLE_CHAR_READ_DATA_LEN);
+                rsp.attr_value.len = 0;
+                esp_ble_gatts_send_response(gatts_if, param->read.conn_id, param->read.trans_id, ESP_GATT_INVALID_OFFSET, &rsp);
+                return;
+            }
+
+            // Determine response length based on MTU
+            uint16_t mtu_size = local_mtu - 1; // ATT header (1 byte)
+            uint16_t send_len = (CONFIG_EXAMPLE_CHAR_READ_DATA_LEN - offset > mtu_size) ? mtu_size : (CONFIG_EXAMPLE_CHAR_READ_DATA_LEN - offset);
+
+            memcpy(rsp.attr_value.value, &char_value_read[offset], send_len);
+            rsp.attr_value.len = send_len;
+
+            // Send response to GATT client
+            esp_err_t err = esp_ble_gatts_send_response(gatts_if, param->read.conn_id, param->read.trans_id, ESP_GATT_OK, &rsp);
+            if (err != ESP_OK)
+            {
+                ESP_LOGE(GATTS_TAG, "Failed to send response: %s", esp_err_to_name(err));
+            }
+        }
+
+        // Handle characteristic read request for PSP service
+        if (param->read.handle == s_gatts_psp_service.char_handle) {
             uint16_t offset = param->read.offset;
 
             // Validate read offset
@@ -452,8 +455,10 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
         }
         break;
     }
-    case ESP_GATTS_WRITE_EVT:
+    case ESP_GATTS_WRITE_EVT: // standard write event (1 packet)
     {
+        // I haven't touched this but it seems like this is analogous to the one above
+        // and should be edited to match the handles as well
         ESP_LOGI(GATTS_TAG, "Characteristic write, conn_id %d, trans_id %" PRIu32 ", handle %d", param->write.conn_id, param->write.trans_id, param->write.handle);
         if (!param->write.is_prep)
         {
@@ -506,7 +511,9 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
         example_write_event_env(gatts_if, &a_prepare_write_env, param);
         break;
     }
-    case ESP_GATTS_EXEC_WRITE_EVT:
+    case ESP_GATTS_EXEC_WRITE_EVT: // execute write event (multiple packets) 
+    // I think it's saying it saves the prepared write data to a buffer and then that buffer is emptied
+    // with another event
         ESP_LOGI(GATTS_TAG, "Execute write");
         esp_ble_gatts_send_response(gatts_if, param->write.conn_id, param->write.trans_id, ESP_GATT_OK, NULL);
         example_exec_write_event_env(&a_prepare_write_env, param);
@@ -515,9 +522,7 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
         ESP_LOGI(GATTS_TAG, "MTU exchange, MTU %d", param->mtu.mtu);
         local_mtu = param->mtu.mtu;
         break;
-    case ESP_GATTS_UNREG_EVT:
-        break;
-    case ESP_GATTS_CREATE_EVT:
+    case ESP_GATTS_CREATE_EVT: // Service add event
         ESP_LOGI(GATTS_TAG, "Service create, status %d, service_handle %d", param->create.status, param->create.service_handle);
         if (param->create.service_id.id.uuid.len == ESP_UUID_LEN_16 && param->create.service_id.id.uuid.uuid.uuid16 == GATTS_BATTERY_SERVICE_UUID)
         {
@@ -539,17 +544,6 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
             {
                 ESP_LOGE(GATTS_TAG, "add battery level char failed, error code =%x", add_char_ret);
             }
-
-            // Add Battery Status Characteristic
-            esp_err_t add_char_ret = esp_ble_gatts_add_char(s_gatts_battery_service.char_status_handle, s_gatts_battery_service.char_status_uuid,
-                                                            ESP_GATT_PERM_READ,
-                                                            ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY,
-                                                            &gatts_demo_char1_val, NULL);
-
-            if (add_char_ret)
-            {
-                ESP_LOGE(GATTS_TAG, "add battery status char failed, error code =%x", add_char_ret);
-            }
         } else if (param->create.service_id.id.uuid.len == ESP_UUID_LEN_128 && param->create.service_id.id.uuid.uuid.uuid128 == gatts_psp_service_uuid.uuid.uuid128) {
             s_gatts_psp_service.service_handle = param->create.service_handle;
 
@@ -569,9 +563,7 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
         }
 
         break;
-    case ESP_GATTS_ADD_INCL_SRVC_EVT:
-        break;
-    case ESP_GATTS_ADD_CHAR_EVT:
+    case ESP_GATTS_ADD_CHAR_EVT: // Characteristic add event
     {
         uint16_t length = 0;
         const uint8_t *prf_char;
@@ -600,18 +592,14 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
         }
         break;
     }
-    case ESP_GATTS_ADD_CHAR_DESCR_EVT:
+    case ESP_GATTS_ADD_CHAR_DESCR_EVT: // Characteristic descriptor add event
         gatts_profile.descr_handle = param->add_char_descr.attr_handle;
         ESP_LOGI(GATTS_TAG, "Descriptor add, status %d, attr_handle %d, service_handle %d",
                  param->add_char_descr.status, param->add_char_descr.attr_handle, param->add_char_descr.service_handle);
         break;
-    case ESP_GATTS_DELETE_EVT:
-        break;
-    case ESP_GATTS_START_EVT:
+    case ESP_GATTS_START_EVT: // Service start event
         ESP_LOGI(GATTS_TAG, "Service start, status %d, service_handle %d",
                  param->start.status, param->start.service_handle);
-        break;
-    case ESP_GATTS_STOP_EVT:
         break;
     case ESP_GATTS_CONNECT_EVT:
     {
@@ -642,21 +630,18 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
             ESP_LOG_BUFFER_HEX(GATTS_TAG, param->conf.value, param->conf.len);
         }
         break;
-    case ESP_GATTS_OPEN_EVT:
-    case ESP_GATTS_CANCEL_OPEN_EVT:
-    case ESP_GATTS_CLOSE_EVT:
-    case ESP_GATTS_LISTEN_EVT:
-    case ESP_GATTS_CONGEST_EVT:
     default:
         break;
     }
 }
 
+// Connection handler (these case names are atrocious)
 static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
 {
     switch (event)
     {
 
+    // Confirms advertising state
     case ESP_GAP_BLE_ADV_DATA_SET_COMPLETE_EVT:
         adv_config_done &= (~adv_config_flag);
         if (adv_config_done == 0)
@@ -664,6 +649,7 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
             esp_ble_gap_start_advertising(&adv_params);
         }
         break;
+    // Confirms scan response
     case ESP_GAP_BLE_SCAN_RSP_DATA_SET_COMPLETE_EVT:
         adv_config_done &= (~scan_rsp_config_flag);
         if (adv_config_done == 0)
@@ -671,6 +657,7 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
             esp_ble_gap_start_advertising(&adv_params);
         }
         break;
+    // Confirms advertising start
     case ESP_GAP_BLE_ADV_START_COMPLETE_EVT:
         // advertising start complete event to indicate advertising start successfully or failed
         if (param->adv_start_cmpl.status != ESP_BT_STATUS_SUCCESS)
@@ -680,14 +667,16 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
         }
         ESP_LOGI(GATTS_TAG, "Advertising start successfully");
         break;
+    // Confirms advertising stop
     case ESP_GAP_BLE_ADV_STOP_COMPLETE_EVT:
-        if (param->adv_start_cmpl.status != ESP_BT_STATUS_SUCCESS)
+        if (param->adv_stop_cmpl.status != ESP_BT_STATUS_SUCCESS)
         {
             ESP_LOGE(GATTS_TAG, "Advertising stop failed, status %d", param->adv_stop_cmpl.status);
             break;
         }
         ESP_LOGI(GATTS_TAG, "Advertising stop successfully");
         break;
+    // Updates connection parameters
     case ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT:
         ESP_LOGI(GATTS_TAG, "Connection params update, status %d, conn_int %d, latency %d, timeout %d",
                  param->update_conn_params.status,
@@ -695,6 +684,7 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
                  param->update_conn_params.latency,
                  param->update_conn_params.timeout);
         break;
+    // Updates packet length
     case ESP_GAP_BLE_SET_PKT_LENGTH_COMPLETE_EVT:
         ESP_LOGI(GATTS_TAG, "Packet length update, status %d, rx %d, tx %d",
                  param->pkt_data_length_cmpl.status,
@@ -720,10 +710,6 @@ void app_main(void)
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
-
-#if CONFIG_EXAMPLE_CI_PIPELINE_ID
-    memcpy(device_name, esp_bluedroid_get_example_name(), ESP_BLE_ADV_NAME_LEN_MAX);
-#endif
 
     ESP_ERROR_CHECK(esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT));
 
