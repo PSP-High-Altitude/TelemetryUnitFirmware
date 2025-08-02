@@ -37,8 +37,10 @@
 #define GATTS_TAG "TELEMETRY_UNIT_GATTS"
 
 // We need a profile for the connection id, app id, other potential settings, etc.
-// This was abstracted away into profiles in the demo code, and I'm not sure what's actually in it...
-// and then there's a struct for each of the services to access their handles and properties
+// the old gatts profile seemed to contain information about service/charactersitics
+// but I think we can just hold those via the service structs you guys made
+// and leave the connection info/other settings in the profile
+
 // there's only really two methods, but both of the implement a lot of poorly documented functionality
 // the event handler has registration, read, write (single vs buffered), connect/disconnect, config
 // I think for event handler for the most part is just setting existing variables to our new structs
@@ -159,6 +161,27 @@ static uint16_t s_gatts_if;
 static uint16_t s_app_id;
 static uint16_t s_conn_id;
 static esp_gatt_perm_t s_perm;
+
+struct gatts_profile_inst
+{
+    esp_gatts_cb_t gatts_cb;
+    uint16_t gatts_if;
+    uint16_t app_id;
+    uint16_t conn_id;
+    uint16_t service_handle;
+    esp_gatt_srvc_id_t service_id;
+    uint16_t char_handle;
+    esp_bt_uuid_t char_uuid;
+    esp_gatt_perm_t perm;
+    esp_gatt_char_prop_t property;
+    uint16_t descr_handle;
+    esp_bt_uuid_t descr_uuid;
+};
+
+static struct gatts_profile_inst gatts_profile = {
+    .gatts_cb = gatts_profile_event_handler,
+    .gatts_if = ESP_GATT_IF_NONE,
+}
 
 typedef struct
 {
