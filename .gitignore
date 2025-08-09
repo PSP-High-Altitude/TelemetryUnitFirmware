@@ -3,3 +3,16 @@ CMakeCache.txt
 CMakeFiles/
 .vscode/
 .devcontainer/
+app-flash_args
+bootloader-flash_args
+bootloader-prefix/
+config/
+esp-idf/
+flash_args
+flash_app_args
+flash_args.in
+flash_bootloader_args
+flash_project_args
+flasher_args.json
+gdbinit/
+partition-table-flash_args
