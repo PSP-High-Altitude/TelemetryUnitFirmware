@@ -71,8 +71,15 @@ static char device_name[ESP_BLE_ADV_NAME_LEN_MAX] = "PSP Telemetry Unit";
 
 #define PREPARE_BUF_MAX_SIZE 1024
 
-static uint8_t char1_str[] = {0x11, 0x22, 0x33};
-static uint16_t descr_value = 0x0;
+static uint8_t test_str[] = {0x11, 0x22, 0x33};
+
+static esp_attr_value_t psp_char_test_val =
+    {
+        .attr_max_len = 20,
+        .attr_len = sizeof(test_str),
+        .attr_value = test_str,
+};
+
 /**
  * Current MTU (Maximum Transmission Unit) size for the active connection.
  *
@@ -582,7 +589,7 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
             esp_err_t add_char_ret = esp_ble_gatts_add_char(s_gatts_psp_service.char_psp_handle, s_gatts_psp_service.char_psp_uuid,
                                                             ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE,
                                                             ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY,
-                                                            &gatts_demo_char1_val, NULL);
+                                                            &psp_char_test_val, NULL);
 
             if (add_char_ret)
             {
