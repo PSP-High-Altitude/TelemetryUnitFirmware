@@ -406,6 +406,7 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
         // If the objects don't match to the ones above I'm guessing they should be defined to be similar 
 
         // Handle descriptor read request for Battery Service
+        // Do we have descriptors?
         if (param->read.handle == gatts_battery_service.descr_handle) {
             memcpy(rsp.attr_value.value, &descr_value, 2);
             rsp.attr_value.len = 2;
@@ -422,7 +423,10 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
         }
 
         // Handle characteristic read request for battery service
-        if (param->read.handle == s_gatts_battery_service.char_handle) {
+
+        // There are two characteristic in the battery service
+        // Handle battery level read request
+        if (param->read.handle == s_gatts_battery_service.char_level_handle || param->read.handle == s_gatts_battery_service.char_status_handle) {
             uint16_t offset = param->read.offset;
 
             // Validate read offset
@@ -448,9 +452,10 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
                 ESP_LOGE(GATTS_TAG, "Failed to send response: %s", esp_err_to_name(err));
             }
         }
+        
 
         // Handle characteristic read request for PSP service
-        if (param->read.handle == s_gatts_psp_service.char_handle) {
+        if (param->read.handle == s_gatts_psp_service.char_psp_handle) {
             uint16_t offset = param->read.offset;
 
             // Validate read offset
@@ -487,7 +492,7 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
         {
             ESP_LOGI(GATTS_TAG, "value len %d, value ", param->write.len);
             ESP_LOG_BUFFER_HEX(GATTS_TAG, param->write.value, param->write.len);
-            if (gatts_profile.descr_handle == param->write.handle && param->write.len == 2)
+            if (s_gatts_psp_service.char_psp_handle == param->write.handle)
             {
                 descr_value = param->write.value[1] << 8 | param->write.value[0];
                 if (descr_value == 0x0001)
